@@ -129,10 +129,7 @@ def upload_audio():
         result = processor.process_audio_command(file_path)
         
         if result['success']:
-            # Generate speech audio
-            audio_data = text_to_speech_elevenlabs(result['voice_response'])
-            
-            # Add to command queue for Pi client
+            # Add to command queue for Pi client (Pi will handle TTS/audio)
             command_id = str(uuid.uuid4())
             command_entry = {
                 'id': command_id,
@@ -141,27 +138,25 @@ def upload_audio():
                 'command_type': result['command_type'],
                 'timestamp': result['timestamp'],
                 'processed': False,
-                'transcription': result['transcription'],
-                'has_audio': audio_data is not None
+                'transcription': result['transcription']
             }
-            
+
             command_queue.append(command_entry)
             command_history.append(command_entry.copy())
-            
+
             # TODO: Save to database here (their job)
             # database.save_command(command_entry)
-            
+
             # Clean up uploaded file
             try:
                 os.remove(file_path)
             except:
                 pass
-            
+
             return jsonify({
                 'success': True,
                 'result': result,
-                'command_id': command_id,
-                'has_audio': audio_data is not None
+                'command_id': command_id
             })
         else:
             return jsonify({'success': False, 'error': result.get('error', 'Processing failed')}), 500

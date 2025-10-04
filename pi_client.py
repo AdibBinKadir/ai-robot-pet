@@ -8,6 +8,8 @@ import time
 import json
 import requests
 from datetime import datetime
+import os
+from pathlib import Path
 
 class PiRobotClient:
     """
@@ -76,6 +78,31 @@ class PiRobotClient:
         except Exception as e:
             print(f"❌ Error executing action {action_number}: {e}")
             return False
+
+    def elevenlabs_tts(self, text, voice_id=None, api_key_env='ELEVENLABS_API_KEY'):
+        """
+        Demo-friendly ElevenLabs TTS helper meant to run on the Pi.
+        Saves a placeholder audio file to `pi_audio/` and returns the path.
+        Replace the demo behavior with real API calls when you have keys and network access.
+        """
+        try:
+            audio_dir = Path('pi_audio')
+            audio_dir.mkdir(exist_ok=True)
+
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            filename = f"{timestamp}_tts.mp3"
+            file_path = audio_dir / filename
+
+            # Demo behaviour: write a tiny text placeholder file so other parts can detect a file
+            with open(file_path, 'wb') as f:
+                f.write(b'')  # placeholder empty file; replace with real bytes from ElevenLabs
+
+            print(f"🔊 DEMO: Saved TTS placeholder to {file_path}")
+            return str(file_path)
+
+        except Exception as e:
+            print(f"❌ TTS error: {e}")
+            return None
     
     def poll_for_commands(self):
         """
