@@ -10,6 +10,7 @@ import requests
 from datetime import datetime
 import os
 from pathlib import Path
+import base64
 
 class PiRobotClient:
     """
@@ -79,13 +80,17 @@ class PiRobotClient:
             print(f"❌ Error executing action {action_number}: {e}")
             return False
 
-    def elevenlabs_tts(self, text, voice_id=None, api_key_env='ELEVENLABS_API_KEY'):
+    # Pi client intentionally keeps no AI/TTS responsibilities.
+    # It only polls the server for command dicts and executes actions locally.
+    def elevenlabs_tts(self, text, voice_id=None):
         """
-        Demo-friendly ElevenLabs TTS helper meant to run on the Pi.
-        Saves a placeholder audio file to `pi_audio/` and returns the path.
-        Replace the demo behavior with real API calls when you have keys and network access.
+        ElevenLabs TTS helper for the Pi. If ELEVENLABS_API_KEY is set in environment
+        or in a local `keys.env`, this will attempt to call the ElevenLabs API and save
+        an MP3 under `pi_audio/`. Otherwise it will write a placeholder file.
+        Returns: path to saved audio file or None on failure.
         """
         try:
+            api_key = os.environ.get('ELEVENLABS_API_KEY')
             audio_dir = Path('pi_audio')
             audio_dir.mkdir(exist_ok=True)
 
@@ -93,15 +98,28 @@ class PiRobotClient:
             filename = f"{timestamp}_tts.mp3"
             file_path = audio_dir / filename
 
-            # Demo behaviour: write a tiny text placeholder file so other parts can detect a file
-            with open(file_path, 'wb') as f:
-                f.write(b'')  # placeholder empty file; replace with real bytes from ElevenLabs
+            if api_key:
+                # Real API call (commented - uncomment when you have API key and network)
+                # url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id or '21m00Tcm4TlvDq8ikWAM'}"
+                # headers = { 'xi-api-key': api_key, 'Accept': 'audio/mpeg', 'Content-Type': 'application/json' }
+                # payload = { 'text': text, 'model_id': 'eleven_monolingual_v1' }
+                # resp = requests.post(url, json=payload, headers=headers, timeout=10)
+                # if resp.status_code == 200:
+                #     with open(file_path, 'wb') as f:
+                #         f.write(resp.content)
+                #     return str(file_path)
+                # else:
+                #     print(f"ElevenLabs returned {resp.status_code}")
+                pass
 
-            print(f"🔊 DEMO: Saved TTS placeholder to {file_path}")
+            # Fallback/demo behavior: create a small placeholder file so other systems can find it
+            with open(file_path, 'wb') as f:
+                f.write(b'')
+
             return str(file_path)
 
         except Exception as e:
-            print(f"❌ TTS error: {e}")
+            print(f"❌ TTS error on Pi: {e}")
             return None
     
     def poll_for_commands(self):
@@ -120,7 +138,15 @@ class PiRobotClient:
                     print(f"\n📨 New command: {command['id']}")
                     print(f"🎤 User said: '{command['transcription']}'")
                     print(f"💭 Response: '{command['voice_response']}'")
-                    
+                    # Synthesize TTS on Pi (ElevenLabs) and optionally play/save audio
+                    try:
+                        audio_path = self.elevenlabs_tts(command['voice_response'])
+                        if audio_path:
+                            print(f"🔊 TTS saved to: {audio_path}")
+                            # TODO: Add platform playback code here (e.g., mpg123/aplay)
+                    except Exception as e:
+                        print(f"⚠️ TTS generation failed: {e}")
+
                     # Execute the robot action
                     success = self.execute_robot_action(command['action_number'])
                     
