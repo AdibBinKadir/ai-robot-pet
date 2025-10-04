@@ -1,41 +1,34 @@
 import { useState, useEffect } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from '/vite.svg'
+import { Auth } from '@supabase/auth-ui-react'
+import { ThemeSupa } from '@supabase/auth-ui-shared'
+import { createClient } from '@supabase/supabase-js'
 import './App.css'
 
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
+const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY
+const supabase = createClient(supabaseUrl, supabaseKey)
+
+
 function App() {
-  const [count, setCount] = useState(0)
+  const [session, setSession] = useState(null)
 
-  const [instruments, setInstruments] = useState([]);
-    useEffect(() => {    getInstruments();  }, []);
-    async function getInstruments() {    const { data } = await supabase.from("instruments").select();
-    setInstruments(data);  }
-
-  return (
-    <>
-     <ul>      {instruments.map((instrument) => (        <li key={instrument.name}>{instrument.name}</li>      ))}    </ul>
-      <div>
-        <a href="https://vite.dev" target="_blank">
-          <img src={viteLogo} className="logo" alt="Vite logo" />
-        </a>
-        <a href="https://react.dev" target="_blank">
-          <img src={reactLogo} className="logo react" alt="React logo" />
-        </a>
-      </div>
-      <h1>Vite + React</h1>
-      <div className="card">
-        <button onClick={() => setCount((count) => count + 1)}>
-          count is {count}
-        </button>
-        <p>
-          Edit <code>src/App.jsx</code> and save to test HMR
-        </p>
-      </div>
-      <p className="read-the-docs">
-        Click on the Vite and React logos to learn more
-      </p>
-    </>
-  )
+    useEffect(() => {
+      supabase.auth.getSession().then(({ data: { session } }) => {
+        setSession(session)
+      })
+      const {
+        data: { subscription },
+      } = supabase.auth.onAuthStateChange((_event, session) => {
+        setSession(session)
+      })
+      return () => subscription.unsubscribe()
+    }, [])
+    if (!session) {
+      return (<Auth supabaseClient={supabase} appearance={{ theme: ThemeSupa }} />)
+    }
+    else {
+      return (<div>Logged in!</div>)
+    }
 }
 
 export default App
