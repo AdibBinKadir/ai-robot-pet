@@ -11,6 +11,7 @@ from datetime import datetime
 import os
 from pathlib import Path
 import base64
+import threading
 
 class PiRobotClient:
     """
@@ -31,6 +32,11 @@ class PiRobotClient:
         
         print(f"🤖 Pi Robot Client initialized")
         print(f"🌐 Server: {self.server_url}")
+        # Load local keys.env if present
+        self._load_keys_env()
+
+        # Optional pigpio setup (initialized lazily)
+        self.pi = None
     
     def execute_robot_action(self, action_number):
         """
@@ -50,28 +56,16 @@ class PiRobotClient:
                 return True
             elif action_number == 1:
                 print("➡️  MOVE FORWARD")
-                # TODO: Add actual robot movement code here
-                # robot.move_forward()
-                time.sleep(0.5)  # Simulate movement time
-                return True
+                return self._move_forward()
             elif action_number == 2:
-                print("⬅️  TURN LEFT")
-                # TODO: Add actual robot movement code here
-                # robot.turn_left()
-                time.sleep(0.5)
-                return True
+                print("⬅️  MOVE BACKWARD")
+                return self._move_backward()
             elif action_number == 3:
-                print("➡️  TURN RIGHT") 
-                # TODO: Add actual robot movement code here
-                # robot.turn_right()
-                time.sleep(0.5)
-                return True
+                print("⬅️  TURN LEFT")
+                return self._turn_left()
             elif action_number == 4:
-                print("⬇️  MOVE BACKWARD")
-                # TODO: Add actual robot movement code here
-                # robot.move_backward()
-                time.sleep(0.5)
-                return True
+                print("➡️  TURN RIGHT")
+                return self._turn_right()
             else:
                 print(f"❌ Unknown action number: {action_number}")
                 return False
@@ -79,6 +73,108 @@ class PiRobotClient:
         except Exception as e:
             print(f"❌ Error executing action {action_number}: {e}")
             return False
+
+    def _load_keys_env(self, env_file='keys.env'):
+        """Load simple KEY=VALUE pairs from env_file into os.environ if present."""
+        try:
+            if not os.path.exists(env_file):
+                return
+            with open(env_file, 'r') as f:
+                for line in f:
+                    line = line.strip()
+                    if not line or line.startswith('#') or '=' not in line:
+                        continue
+                    k, v = line.split('=', 1)
+                    k = k.strip()
+                    v = v.strip().strip('"')
+                    if k and v and k not in os.environ:
+                        os.environ[k] = v
+        except Exception as e:
+            print(f"⚠️ Could not load {env_file}: {e}")
+
+    def _read_key_from_env_file(self, key_name, env_file='keys.env'):
+        """Read a single key from env file without modifying env.
+        Returns the value or None."""
+        try:
+            if not os.path.exists(env_file):
+                return None
+            with open(env_file, 'r') as f:
+                for line in f:
+                    if line.strip().startswith(key_name + '='):
+                        return line.strip().split('=', 1)[1].strip().strip('"')
+        except Exception:
+            return None
+        return None
+
+    def _ensure_pigpio(self):
+        """Lazily initialize pigpio and store client in self.pi. Returns True if available."""
+        if self.pi is not None:
+            return True
+        try:
+            import pigpio
+            self.pi = pigpio.pi()
+            if not self.pi.connected:
+                print("⚠️ pigpio daemon not running or cannot connect")
+                self.pi = None
+                return False
+            return True
+        except Exception as e:
+            # pigpio not available; fallback to simulation
+            print(f"⚠️ pigpio unavailable: {e}")
+            self.pi = None
+            return False
+
+    # Movement stubs - use pigpio when available, otherwise simulate
+    def _move_forward(self):
+        if self._ensure_pigpio():
+            try:
+                # Example: set motor pins - replace with your wiring
+                # self.pi.write(MOTOR_LEFT_FORWARD_PIN, 1)
+                # self.pi.write(MOTOR_RIGHT_FORWARD_PIN, 1)
+                time.sleep(0.5)
+                return True
+            except Exception as e:
+                print(f"❌ pigpio move_forward error: {e}")
+                return False
+        else:
+            time.sleep(0.5)
+            return True
+
+    def _move_backward(self):
+        if self._ensure_pigpio():
+            try:
+                time.sleep(0.5)
+                return True
+            except Exception as e:
+                print(f"❌ pigpio move_backward error: {e}")
+                return False
+        else:
+            time.sleep(0.5)
+            return True
+
+    def _turn_left(self):
+        if self._ensure_pigpio():
+            try:
+                time.sleep(0.4)
+                return True
+            except Exception as e:
+                print(f"❌ pigpio turn_left error: {e}")
+                return False
+        else:
+            time.sleep(0.4)
+            return True
+
+    def _turn_right(self):
+        if self._ensure_pigpio():
+            try:
+                time.sleep(0.4)
+                return True
+            except Exception as e:
+                print(f"❌ pigpio turn_right error: {e}")
+                return False
+        else:
+            time.sleep(0.4)
+            return True
 
     # Pi client intentionally keeps no AI/TTS responsibilities.
     # It only polls the server for command dicts and executes actions locally.
@@ -90,7 +186,13 @@ class PiRobotClient:
         Returns: path to saved audio file or None on failure.
         """
         try:
+            # Try env var first
             api_key = os.environ.get('ELEVENLABS_API_KEY')
+            # Fallback: try reading keys.env in repo root
+            if not api_key:
+                env_key = self._read_key_from_env_file('ELEVENLABS_API_KEY')
+                if env_key:
+                    api_key = env_key
             audio_dir = Path('pi_audio')
             audio_dir.mkdir(exist_ok=True)
 
@@ -99,18 +201,19 @@ class PiRobotClient:
             file_path = audio_dir / filename
 
             if api_key:
-                # Real API call (commented - uncomment when you have API key and network)
-                # url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id or '21m00Tcm4TlvDq8ikWAM'}"
-                # headers = { 'xi-api-key': api_key, 'Accept': 'audio/mpeg', 'Content-Type': 'application/json' }
-                # payload = { 'text': text, 'model_id': 'eleven_monolingual_v1' }
-                # resp = requests.post(url, json=payload, headers=headers, timeout=10)
-                # if resp.status_code == 200:
-                #     with open(file_path, 'wb') as f:
-                #         f.write(resp.content)
-                #     return str(file_path)
-                # else:
-                #     print(f"ElevenLabs returned {resp.status_code}")
-                pass
+                try:
+                    url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id or '21m00Tcm4TlvDq8ikWAM'}"
+                    headers = { 'xi-api-key': api_key, 'Accept': 'audio/mpeg', 'Content-Type': 'application/json' }
+                    payload = { 'text': text, 'model_id': 'eleven_monolingual_v1' }
+                    resp = requests.post(url, json=payload, headers=headers, timeout=10)
+                    if resp.status_code == 200:
+                        with open(file_path, 'wb') as f:
+                            f.write(resp.content)
+                        return str(file_path)
+                    else:
+                        print(f"ElevenLabs returned {resp.status_code}: {resp.text}")
+                except Exception as e:
+                    print(f"ElevenLabs request failed: {e}")
 
             # Fallback/demo behavior: create a small placeholder file so other systems can find it
             with open(file_path, 'wb') as f:
