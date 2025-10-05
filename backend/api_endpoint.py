@@ -155,7 +155,7 @@ Be conversational and friendly for non-movement inputs. Only use actions 0-4 for
         self.actions[action_number] = action_name
         self.voice_responses[action_number] = voice_response
 
-def read_api_key(env_file='keys.env', key_name='GEMINI_API_KEY'):
+def read_api_key(env_file='backend/keys.env', key_name='GEMINI_API_KEY'):
     with open(env_file, 'r') as f:
         for line in f:
             if line.startswith(key_name + '='):
