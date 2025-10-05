@@ -47,3 +47,9 @@ keys.env
 # Scripts
 setup_github_repo.ps1
 setup_github_repo.bat
+
+#Audio extensions
+.mp4
+.mp3
+.wav
+.m4a
