@@ -1,8 +1,9 @@
 import { useState } from "react";
-import { DeviceCard } from "./components/DeviceCard";
+import { DeviceCard } from "./components/DeviceCard.jsx";
 import { Mic, MicOff } from "lucide-react";
+import './styles/mic.css'
 
-export default function App() {
+export default function Microphone() {
   const [devices, setDevices] = useState([
     {
       id: "1",

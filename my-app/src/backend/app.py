@@ -215,6 +215,7 @@ def index():
         'status': 'running',
         'endpoints': {
             'images': '/images',
+            'microphone': '/microphone',
             'audio_commands': '/api/upload-audio',
             'command_history': '/api/history',
             'health': '/health'
@@ -350,6 +351,8 @@ def update_command_status(command_id):
             
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+
 
 @app.route('/api/status', methods=['GET'])
 def get_server_status():

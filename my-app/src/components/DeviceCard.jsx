@@ -1,5 +1,5 @@
 import { Wifi, Smartphone, Laptop, Watch, Speaker } from "lucide-react";
-import { Card } from "./ui/card";
+import { Card } from "./ui/card.tsx";
 
 const iconMap = {
   phone: Smartphone,

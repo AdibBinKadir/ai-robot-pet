@@ -5,6 +5,8 @@ import { supabase } from './dbconnect';
 import { useEffect, useState } from 'react';
 import Login from './login';
 import Verification from './verification';
+import Microphone from './microphone';
+// import './index.css';
 
 function App() {
   const [session, setSession] = useState(null);
@@ -34,15 +36,15 @@ function App() {
           }
         />
         <Route
-          path="/"
+          path="/microphone"
           element={
-            session ? <Navigate to="/verification" /> : <Navigate to="/login" />
+            session ? <Microphone /> : <Navigate to="/login" />
           }
         />
         <Route
-          path="/microphone"
+          path="/"
           element={
-            session ? <Navigate to="/microphone" /> : <Navigate to="/login" />
+            session ? <Navigate to="/verification" /> : <Navigate to="/login" />
           }
         />
         <Route

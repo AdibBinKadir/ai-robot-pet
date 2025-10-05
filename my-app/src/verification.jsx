@@ -4,9 +4,9 @@ import { supabase } from './dbconnect'
 import RobotControl from './RobotControl'
 import DatabaseTester from './DatabaseTester'
 import photo from './assets/photo.svg'
-import "./verification.css"
-import './App.css'
-import './index.css'
+// import "./verification.css"
+// import './App.css'
+// import './index.css'
 
 function Verification() {
   const navigate = useNavigate()
