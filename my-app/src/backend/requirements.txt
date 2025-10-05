@@ -1,15 +1,35 @@
-# Clean Robot Voice Control System Requirements
-# Core dependencies for your Gemini AI processing
+# AI Robot Pet Backend - Unified Server Dependencies
 
+# Core AI Processing
 google-generativeai>=0.3.0
 
-# Optional: Only if using real-time audio recording  
-# pyaudio>=0.2.11  # Uncomment if needed for microphone input
-
-# Server dependencies
+# Web Framework
 flask>=2.3.0
 flask-cors>=4.0.0
+werkzeug>=2.3.0
+
+# Database & Storage
+supabase>=2.0.0
+storage3>=0.7.0
+psycopg2-binary>=2.9.0
+
+# HTTP Requests
 requests>=2.28.0
 
-# Text-to-Speech (ElevenLabs)
-elevenlabs>=0.2.0  # Optional: for voice synthesis
+# Environment & Configuration
+python-dotenv>=1.0.0
+
+# File Processing & Security
+secure-filename>=1.0.0
+
+# Optional: Audio Processing (uncomment if needed)
+# pyaudio>=0.2.11
+# pydub>=0.25.1
+
+# Optional: Text-to-Speech
+# elevenlabs>=0.2.0
+
+# Development Dependencies (optional)
+# pytest>=7.0.0
+# black>=22.0.0
+# flake8>=5.0.0

@@ -1,6 +1,10 @@
 import os
 import json
 import google.generativeai as genai
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 class RobotCommandProcessor:
     def __init__(self, api_key):
@@ -155,17 +159,29 @@ Be conversational and friendly for non-movement inputs. Only use actions 0-4 for
         self.actions[action_number] = action_name
         self.voice_responses[action_number] = voice_response
 
-def read_api_key(env_file='keys.env', key_name='GEMINI_API_KEY'):
-    with open(env_file, 'r') as f:
-        for line in f:
-            if line.startswith(key_name + '='):
-                return line.strip().split('=', 1)[1]
-    raise ValueError(f"{key_name} not found in {env_file}")
+def read_api_key(key_name='GEMINI_API_KEY', env_file='keys.env'):
+    """Read API key from environment variable or fallback to file"""
+    # First try environment variable
+    api_key = os.getenv(key_name)
+    if api_key:
+        return api_key
+    
+    # Fallback to reading from file
+    if os.path.exists(env_file):
+        try:
+            with open(env_file, 'r') as f:
+                for line in f:
+                    if line.startswith(key_name + '='):
+                        return line.strip().split('=', 1)[1]
+        except Exception as e:
+            print(f"Warning: Could not read {env_file}: {e}")
+    
+    raise ValueError(f"{key_name} not found in environment variables or {env_file}")
 
 def main():
     """Main function to run the robot assistant."""
     try:
-        api_key = read_api_key()
+        api_key = read_api_key('GEMINI_API_KEY')
         robot = RobotCommandProcessor(api_key)
         
         print("🤖 Friendly Robot Assistant Started!")

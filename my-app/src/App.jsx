@@ -1,47 +1,47 @@
-
-import { useState, useEffect } from 'react'
-import { BrowserRouter, Route, Routes, Navigate } from 'react-router-dom'
-import { supabase } from './dbconnect'
-import Login from './login'
-import Verification from './verification'
-import './App.css'
-
+import { BrowserRouter as Router, Route, Routes, Navigate } from 'react-router-dom';
+import { Auth } from '@supabase/auth-ui-react';
+import { ThemeSupa } from '@supabase/auth-ui-shared';
+import { supabase } from './dbconnect';
+import { useEffect, useState } from 'react';
+import Login from './login';
+import Verification from './verification';
 
 function App() {
-  const [session, setSession] = useState(null)
+  const [session, setSession] = useState(null);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session)
-    })
+      setSession(session);
+    });
+
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session)
-    })
-    return () => subscription.unsubscribe()
-  }, [])
+      setSession(session);
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
 
   return (
-    <BrowserRouter>
+    <Router>
       <Routes>
-        {/* Public Route */}
         <Route path="/login" element={<Login />} />
-
-        {/* After login the user should go to verification */}
         <Route
           path="/verification"
-          element={session ? <Verification /> : <Navigate to="/login" replace />}
+          element={
+            session ? <Verification session={session} /> : <Navigate to="/login" />
+          }
         />
-
-        {/* Default route */}
         <Route
           path="/"
-          element={session ? <Navigate to="/verification" replace /> : <Navigate to="/login" replace />}
+          element={
+            session ? <Navigate to="/verification" /> : <Navigate to="/login" />
+          }
         />
       </Routes>
-    </BrowserRouter>
-  )
+    </Router>
+  );
 }
 
-export default App
+export default App;

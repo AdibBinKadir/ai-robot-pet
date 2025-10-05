@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-PI CLIENT - Polls command server and executes robot actions
-Runs on Raspberry Pi, connects to Flask server for commands
+PI CLIENT - Polls Supabase database and executes robot actions
+Runs on Raspberry Pi, connects to Supabase for commands
 """
 
 import time
@@ -12,31 +12,51 @@ import os
 from pathlib import Path
 import base64
 import threading
+from supabase import create_client, Client
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 class PiRobotClient:
     """
     Client that runs on Raspberry Pi to execute robot commands.
-    Polls the Flask server for new commands and executes them.
+    Polls Supabase database for new commands and executes them.
     """
     
-    def __init__(self, server_url="http://localhost:5000"):
+    def __init__(self, supabase_url=None, supabase_key=None):
         """
-        Initialize Pi client.
+        Initialize Pi client with Supabase connection.
         
         Args:
-            server_url (str): URL of the Flask command server
+            supabase_url (str): Supabase project URL
+            supabase_key (str): Supabase service role key
         """
-        self.server_url = server_url.rstrip('/')
-        self.poll_interval = 1.0  # seconds
+        # Get Supabase credentials from environment or parameters
+        self.supabase_url = supabase_url or os.getenv('SUPABASE_URL')
+        self.supabase_key = supabase_key or os.getenv('SUPABASE_SERVICE_ROLE_KEY')
+        
+        if not self.supabase_url or not self.supabase_key:
+            raise ValueError("Supabase URL and Service Role Key are required")
+        
+        # Initialize Supabase client
+        self.supabase: Client = create_client(self.supabase_url, self.supabase_key)
+        
+        self.poll_interval = 2.0  # seconds
         self.running = False
+        self.last_command_timestamp = None
         
         print(f"🤖 Pi Robot Client initialized")
-        print(f"🌐 Server: {self.server_url}")
-        # Load local keys.env if present
+        print(f"🌐 Supabase: {self.supabase_url}")
+        
+        # Load local keys.env if present (for additional config)
         self._load_keys_env()
 
         # Optional pigpio setup (initialized lazily)
         self.pi = None
+        
+        # Test database connection
+        self._test_database_connection()
     
     def execute_robot_action(self, action_number):
         """

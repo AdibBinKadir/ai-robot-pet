@@ -7,9 +7,12 @@ Reads audio → converts to text → processes through AI → returns result
 import os
 import json
 from datetime import datetime
+from dotenv import load_dotenv
 from api_endpoint import RobotCommandProcessor, read_api_key
 from speech_to_text import SpeechToTextProcessor
 
+# Load environment variables
+load_dotenv()
 
 class MainRobotProcessor:
     """
@@ -18,7 +21,7 @@ class MainRobotProcessor:
     
     def __init__(self):
         """Initialize with Gemini API components."""
-        self.api_key = read_api_key()
+        self.api_key = read_api_key('GEMINI_API_KEY')
         self.command_ai = RobotCommandProcessor(self.api_key)
         self.speech_processor = SpeechToTextProcessor(self.api_key)
         

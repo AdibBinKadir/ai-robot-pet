@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from './dbconnect'
+import RobotControl from './RobotControl'
+import DatabaseTester from './DatabaseTester'
 import photo from './assets/photo.svg'
 import "./verification.css"
 import './App.css'
@@ -117,6 +119,16 @@ function Verification() {
           </div>
 
           {message && <div className="upload-message" style={{ marginTop: 8 }}>{message}</div>}
+        </div>
+
+        {/* Robot Control Section */}
+        <div style={{ marginTop: '40px' }}>
+          <RobotControl />
+        </div>
+
+        {/* Database Testing Section */}
+        <div style={{ marginTop: '40px' }}>
+          <DatabaseTester />
         </div>
       </div>
     </>
