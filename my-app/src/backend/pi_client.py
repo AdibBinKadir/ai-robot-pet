@@ -22,10 +22,13 @@ ELEVENLABS_API_KEY=your_elevenlabs_api_key
 USAGE:
 python pi_client.py
 
-GPIO PIN CONFIGURATION:
-- Modify self.gpio_pin in __init__ method to change control pin
-- Default is GPIO pin 18 (BCM numbering)
-- Pin goes HIGH during robot actions, LOW when idle
+GPIO PIN CONFIGURATION FOR LED BREADBOARD:
+- Action 1 (Forward): GPIO 17 -> LED + Resistor -> Ground
+- Action 2 (Backward): GPIO 18 -> LED + Resistor -> Ground  
+- Action 3 (Left): GPIO 23 -> LED + Resistor -> Ground
+- Action 4 (Right): GPIO 27 -> LED + Resistor -> Ground
+- LEDs stay ON indefinitely after action is triggered
+- Use 220-330 ohm resistors for LED current limiting
 
 TARGET USER ID:
 - Monitors user ID: a877a877-5a68-407f-bf18-6b3f4e69d59d
@@ -103,8 +106,13 @@ class StandalonePiClient:
         # Target user ID to monitor
         self.target_user_id = "a877a877-5a68-407f-bf18-6b3f4e69d59d"
         
-        # GPIO pin for robot control (modify as needed)
-        self.gpio_pin = 18  # Change this to your desired GPIO pin
+        # GPIO pins for LED actions (4 different pins for 4 actions)
+        self.gpio_pins = {
+            1: 17,  # Action 1: Move Forward
+            2: 18,  # Action 2: Move Backward  
+            3: 23,  # Action 3: Turn Left
+            4: 27   # Action 4: Turn Right
+        }
         
         # Get Supabase credentials from environment
         self.supabase_url = os.getenv('SUPABASE_URL')
@@ -160,24 +168,28 @@ class StandalonePiClient:
         
         print(f"🤖 Standalone Pi Client initialized")
         print(f"🎯 Monitoring user: {self.target_user_id}")
-        print(f"📌 GPIO pin: {self.gpio_pin}")
+        print(f"📌 GPIO pins: {self.gpio_pins}")
         print(f"🌐 Supabase: {self.supabase_url}")
         
         # Test database connection
         self._test_database_connection()
     
     def _setup_gpio(self):
-        """Initialize GPIO for robot control"""
+        """Initialize GPIO for LED control (4 pins for 4 actions)"""
         if GPIO_AVAILABLE:
             try:
                 GPIO.setmode(GPIO.BCM)
-                GPIO.setup(self.gpio_pin, GPIO.OUT)
-                GPIO.output(self.gpio_pin, GPIO.LOW)  # Start with pin low
-                print(f"✅ GPIO pin {self.gpio_pin} initialized")
+                # Setup all 4 pins as outputs
+                for action, pin in self.gpio_pins.items():
+                    GPIO.setup(pin, GPIO.OUT)
+                    GPIO.output(pin, GPIO.LOW)  # Start with all LEDs off
+                    print(f"✅ GPIO pin {pin} (Action {action}) initialized")
+                
+                print("🔴🟡🟢🔵 All LED pins ready")
             except Exception as e:
                 print(f"❌ GPIO setup failed: {e}")
         else:
-            print("💡 Running in GPIO simulation mode")
+            print("💡 Running in GPIO simulation mode (4 LEDs)")
     
     def _setup_audio(self):
         """Initialize audio playback system"""
@@ -219,7 +231,7 @@ class StandalonePiClient:
     def execute_robot_action(self, action_number):
         """
         Execute robot action based on action number.
-        Sets GPIO pin high for the duration of the action.
+        Turns on corresponding LED and leaves it on indefinitely.
         
         Args:
             action_number (int): 0-4 robot action
@@ -231,20 +243,20 @@ class StandalonePiClient:
             print(f"🎯 Executing action {action_number}")
             
             if action_number == 0:
-                print("💬 Conversational response - no robot movement")
+                print("💬 Conversational response - no LED action")
                 return True
-            elif action_number == 1:
-                print("➡️ MOVE FORWARD")
-                return self._trigger_gpio_action(0.8)  # 800ms pulse
-            elif action_number == 2:
-                print("⬅️ MOVE BACKWARD") 
-                return self._trigger_gpio_action(0.8)  # 800ms pulse
-            elif action_number == 3:
-                print("↩️ TURN LEFT")
-                return self._trigger_gpio_action(0.6)  # 600ms pulse
-            elif action_number == 4:
-                print("↪️ TURN RIGHT")
-                return self._trigger_gpio_action(0.6)  # 600ms pulse
+            elif action_number in self.gpio_pins:
+                # Turn on the corresponding LED for this action
+                if action_number == 1:
+                    print("➡️ MOVE FORWARD - LED ON")
+                elif action_number == 2:
+                    print("⬅️ MOVE BACKWARD - LED ON") 
+                elif action_number == 3:
+                    print("↩️ TURN LEFT - LED ON")
+                elif action_number == 4:
+                    print("↪️ TURN RIGHT - LED ON")
+                
+                return self._set_led_state(action_number, True)
             else:
                 print(f"❌ Unknown action number: {action_number}")
                 return False
@@ -253,30 +265,50 @@ class StandalonePiClient:
             print(f"❌ Error executing action {action_number}: {e}")
             return False
     
-    def _trigger_gpio_action(self, duration):
+    def _set_led_state(self, action_number, state):
         """
-        Trigger GPIO pin for specified duration
+        Set LED state for specific action (ON stays ON indefinitely)
         
         Args:
-            duration (float): Duration in seconds to keep pin high
+            action_number (int): Action number (1-4)
+            state (bool): True for ON, False for OFF
         
         Returns:
             bool: True if successful
         """
         try:
+            if action_number not in self.gpio_pins:
+                print(f"❌ Invalid action number: {action_number}")
+                return False
+                
+            pin = self.gpio_pins[action_number]
+            
             if GPIO_AVAILABLE:
-                GPIO.output(self.gpio_pin, GPIO.HIGH)
-                print(f"📌 GPIO pin {self.gpio_pin} set HIGH for {duration}s")
-                time.sleep(duration)
-                GPIO.output(self.gpio_pin, GPIO.LOW)
-                print(f"📌 GPIO pin {self.gpio_pin} set LOW")
+                GPIO.output(pin, GPIO.HIGH if state else GPIO.LOW)
+                state_text = "ON" if state else "OFF"
+                led_colors = {1: "🔴", 2: "🟡", 3: "🟢", 4: "🔵"}
+                color = led_colors.get(action_number, "💡")
+                print(f"{color} GPIO pin {pin} (Action {action_number}) set {state_text}")
             else:
-                print(f"💡 [SIMULATION] GPIO pin {self.gpio_pin} would be HIGH for {duration}s")
-                time.sleep(duration)
+                state_text = "ON" if state else "OFF"
+                led_colors = {1: "🔴 RED", 2: "🟡 YELLOW", 3: "🟢 GREEN", 4: "🔵 BLUE"}
+                color = led_colors.get(action_number, "💡")
+                print(f"💡 [SIMULATION] {color} LED (pin {pin}) would be {state_text}")
             
             return True
         except Exception as e:
-            print(f"❌ GPIO action failed: {e}")
+            print(f"❌ GPIO LED control failed: {e}")
+            return False
+    
+    def turn_off_all_leds(self):
+        """Turn off all LEDs"""
+        try:
+            print("🔴🟡🟢🔵 Turning off all LEDs")
+            for action_number in self.gpio_pins:
+                self._set_led_state(action_number, False)
+            return True
+        except Exception as e:
+            print(f"❌ Failed to turn off LEDs: {e}")
             return False
 
     def elevenlabs_tts_and_play(self, text, voice_id=None):
