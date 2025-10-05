@@ -5,7 +5,14 @@ Runs independently on Raspberry Pi, continuously polls for command changes
 Executes GPIO commands and plays TTS responses directly
 
 REQUIREMENTS FOR PI:
-pip install supabase python-dotenv requests RPi.GPIO pygame
+pip install supabase python-dotenv requests RPi.GPIO
+
+OPTIONAL AUDIO (choose one):
+pip install pygame  # Preferred method
+# OR
+sudo apt-get install mpg123  # System audio player
+# OR
+sudo apt-get install mplayer  # Alternative player
 
 REQUIRED .env FILE:
 SUPABASE_URL=your_supabase_project_url
@@ -31,6 +38,8 @@ import requests
 import os
 import io
 import threading
+import tempfile
+import subprocess
 from datetime import datetime
 from supabase import create_client, Client
 from dotenv import load_dotenv
@@ -61,6 +70,27 @@ except ImportError:
 # Load environment variables
 load_dotenv()
 
+def load_env_manual():
+    """Manual fallback to load .env file if dotenv fails"""
+    env_file = '.env'
+    if os.path.exists(env_file):
+        print(f"📄 Loading {env_file} manually...")
+        with open(env_file, 'r') as f:
+            for line_num, line in enumerate(f, 1):
+                line = line.strip()
+                if line and not line.startswith('#') and '=' in line:
+                    try:
+                        key, value = line.split('=', 1)
+                        key = key.strip()
+                        value = value.strip().strip('"\'')  # Remove quotes
+                        if key and value:
+                            os.environ[key] = value
+                            print(f"   ✅ Set {key}")
+                    except Exception as e:
+                        print(f"   ❌ Error parsing line {line_num}: {e}")
+    else:
+        print(f"❌ {env_file} file not found!")
+
 class StandalonePiClient:
     """
     Standalone Pi client that monitors database for command changes
@@ -80,8 +110,15 @@ class StandalonePiClient:
         self.supabase_url = os.getenv('SUPABASE_URL')
         self.supabase_key = os.getenv('SUPABASE_SERVICE_ROLE_KEY')
         
+        # If not found, try manual env loading
         if not self.supabase_url or not self.supabase_key:
-            raise ValueError("SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set in environment")
+            print("🔄 Environment variables not found, trying manual .env loading...")
+            load_env_manual()
+            self.supabase_url = os.getenv('SUPABASE_URL')
+            self.supabase_key = os.getenv('SUPABASE_SERVICE_ROLE_KEY')
+        
+        if not self.supabase_url or not self.supabase_key:
+            raise ValueError("SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set in .env file")
         
         # Initialize Supabase client
         self.supabase: Client = create_client(self.supabase_url, self.supabase_key)
@@ -101,10 +138,25 @@ class StandalonePiClient:
         # Initialize audio system
         self._setup_audio()
         
-        # Load ElevenLabs API key
+        # Load ElevenLabs API key with debugging
         self.elevenlabs_api_key = os.getenv('ELEVENLABS_API_KEY')
+        
+        # Debug environment loading
+        print(f"🔍 Environment check:")
+        print(f"   - Current working directory: {os.getcwd()}")
+        print(f"   - .env file exists: {os.path.exists('.env')}")
+        print(f"   - ELEVENLABS_API_KEY found: {'Yes' if self.elevenlabs_api_key else 'No'}")
+        if self.elevenlabs_api_key:
+            print(f"   - API key preview: {self.elevenlabs_api_key[:10]}...")
+        
         if not self.elevenlabs_api_key:
             print("⚠️ ELEVENLABS_API_KEY not found - TTS will be disabled")
+            print("💡 Make sure .env file is in the same directory as this script")
+            print("💡 .env file should contain: ELEVENLABS_API_KEY=your_key_here")
+            print("💡 Example .env content:")
+            print("   SUPABASE_URL=https://your-project.supabase.co")
+            print("   SUPABASE_SERVICE_ROLE_KEY=your_service_key")
+            print("   ELEVENLABS_API_KEY=your_elevenlabs_key")
         
         print(f"🤖 Standalone Pi Client initialized")
         print(f"🎯 Monitoring user: {self.target_user_id}")
@@ -129,16 +181,21 @@ class StandalonePiClient:
     
     def _setup_audio(self):
         """Initialize audio playback system"""
+        self.pygame_working = False
+        
         if PYGAME_AVAILABLE:
             try:
                 pygame.mixer.init()
+                self.pygame_working = True
                 print("✅ Pygame audio system initialized")
             except Exception as e:
                 print(f"❌ Pygame init failed: {e}")
+                print("💡 Falling back to system audio commands")
+                self.pygame_working = False
         elif PYDUB_AVAILABLE:
             print("✅ Pydub audio system available")
         else:
-            print("⚠️ No audio playback system available")
+            print("⚠️ No Python audio libraries - will use system commands")
     
     def _test_database_connection(self):
         """Test connection to Supabase database"""
@@ -272,6 +329,7 @@ class StandalonePiClient:
     def _play_audio_from_bytes(self, audio_bytes):
         """
         Play audio from byte data using available audio system.
+        Tries multiple methods: pygame, pydub, or system commands (aplay/mpg123)
         
         Args:
             audio_bytes (bytes): MP3 audio data
@@ -280,18 +338,24 @@ class StandalonePiClient:
             bool: True if successful
         """
         try:
-            if PYGAME_AVAILABLE:
+            if PYGAME_AVAILABLE and self.pygame_working:
                 # Use pygame for playback
-                audio_buffer = io.BytesIO(audio_bytes)
-                pygame.mixer.music.load(audio_buffer)
-                pygame.mixer.music.play()
-                
-                # Wait for playback to complete
-                while pygame.mixer.music.get_busy():
-                    time.sleep(0.1)
-                
-                print("✅ Audio played via pygame")
-                return True
+                try:
+                    audio_buffer = io.BytesIO(audio_bytes)
+                    pygame.mixer.music.load(audio_buffer)
+                    pygame.mixer.music.play()
+                    
+                    # Wait for playback to complete
+                    while pygame.mixer.music.get_busy():
+                        time.sleep(0.1)
+                    
+                    print("✅ Audio played via pygame")
+                    return True
+                except Exception as e:
+                    print(f"❌ Pygame playback failed: {e}")
+                    print("💡 Switching to system commands")
+                    self.pygame_working = False  # Don't try pygame again
+                    return self._play_audio_system_command(audio_bytes)
                 
             elif PYDUB_AVAILABLE:
                 # Use pydub for playback
@@ -303,11 +367,79 @@ class StandalonePiClient:
                 print("✅ Audio played via pydub")
                 return True
             else:
-                print("⚠️ No audio playback system available")
-                return False
+                # Fallback to system audio commands (common on Pi)
+                return self._play_audio_system_command(audio_bytes)
                 
         except Exception as e:
-            print(f"❌ Audio playback failed: {e}")
+            print(f"❌ Primary audio playback failed: {e}")
+            # Try system command as fallback
+            try:
+                return self._play_audio_system_command(audio_bytes)
+            except Exception as e2:
+                print(f"❌ System audio fallback also failed: {e2}")
+                return False
+    
+    def _play_audio_system_command(self, audio_bytes):
+        """
+        Play audio using system commands (mpg123, aplay, etc.)
+        
+        Args:
+            audio_bytes (bytes): MP3 audio data
+            
+        Returns:
+            bool: True if successful
+        """
+        try:
+            import tempfile
+            import subprocess
+            
+            # Create temporary file for audio
+            with tempfile.NamedTemporaryFile(suffix='.mp3', delete=False) as tmp_file:
+                tmp_file.write(audio_bytes)
+                tmp_path = tmp_file.name
+            
+            # Try different audio players (common on Pi)
+            audio_commands = [
+                ['mpg123', '-q', tmp_path],  # Common MP3 player
+                ['mplayer', '-quiet', tmp_path],  # Alternative player
+                ['cvlc', '--intf', 'dummy', '--play-and-exit', tmp_path],  # VLC
+                ['omxplayer', '-o', 'local', tmp_path],  # Pi-specific player
+                ['aplay', tmp_path]  # Basic ALSA player (may not work with MP3)
+            ]
+            
+            for cmd in audio_commands:
+                try:
+                    print(f"🎵 Trying: {cmd[0]}")
+                    result = subprocess.run(cmd, 
+                                          stdout=subprocess.DEVNULL, 
+                                          stderr=subprocess.DEVNULL, 
+                                          timeout=30)
+                    
+                    if result.returncode == 0:
+                        print(f"✅ Audio played via {cmd[0]}")
+                        # Cleanup temp file
+                        try:
+                            os.unlink(tmp_path)
+                        except:
+                            pass
+                        return True
+                        
+                except (subprocess.TimeoutExpired, FileNotFoundError):
+                    continue
+            
+            print("❌ No working audio player found")
+            print("💡 Install one of: mpg123, mplayer, vlc, or omxplayer")
+            
+            # Cleanup temp file
+            try:
+                os.unlink(tmp_path)
+            except:
+                pass
+            
+            return False
+            
+        except Exception as e:
+            print(f"❌ System audio command failed: {e}")
             return False
     
     def check_for_command_changes(self):
