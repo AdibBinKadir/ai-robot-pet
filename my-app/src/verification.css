@@ -1,0 +1,182 @@
+
+/* Top nav bar layout */
+.header {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 64px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 1rem;
+  gap: 1rem;
+  background: #ffffff;
+  border-bottom: 1px solid rgba(0,0,0,0.06);
+  box-shadow: 0 2px 8px rgba(10, 20, 40, 0.04);
+  z-index: 1000;
+  box-sizing: border-box;
+}
+
+/* left side: title / user info */
+.header .left {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+.header h2 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+}
+.header p {
+  margin: 0;
+  font-size: 0.9rem;
+  color: #333;
+  opacity: 0.85;
+}
+
+/* right side: actions (logout) */
+.header .right {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* keep your button styles but slightly adapt for nav */
+.header button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.45rem 0.9rem;
+  background: linear-gradient(90deg, #0077ff 0%, #0057d9 100%);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 0.9rem;
+  box-shadow: 0 6px 18px rgba(3, 12, 45, 0.12);
+  transition: transform 120ms ease, box-shadow 120ms ease, opacity 120ms ease;
+}
+.header button:hover { transform: translateY(-2px); box-shadow: 0 10px 24px rgba(3,12,45,0.16); }
+.header button:active { transform: translateY(0); opacity: 0.95; }
+.header button:focus { outline: 3px solid rgba(0,123,255,0.18); outline-offset: 3px; }
+.header button[disabled] { opacity: 0.6; cursor: not-allowed; transform: none; box-shadow: none; }
+
+/* Avoid content being hidden under the fixed nav */
+.body {
+  padding-top: 72px; /* make room for the fixed header */
+  display: flex;
+  flex-direction: column;
+  align-items: center; /* center page content horizontally */
+  gap: 1.25rem;
+  width: 100%;
+
+  /* fix: use full white hex, readable text color, avoid overuse of !important */
+  background-color: #ffffff !important;
+  color: #111827 !important;
+
+  /* prevent some UA forced-dark/high-contrast overrides where supported */
+  forced-color-adjust: none;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+
+.upload-form {
+  min-height: 600px;
+  margin: 1rem auto; /* centers horizontally */
+  width: clamp(28rem, 50vw, 64rem); /* fluid, bounded width */
+  max-width: 95%;
+  border: 1px solid rgba(128, 128, 128, 0.12); /* subtle transparent grey */
+  border-radius: 12px;
+  padding: 1.25rem 1.5rem;
+  background: #ffffff !important; /* keep white even in dark mode */
+  box-shadow: 0 6px 18px rgba(3, 12, 45, 0.03);
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  align-items: center; /* center horizontally */
+  justify-content: center; /* center vertically inside the card */
+  gap: 1rem;
+  align-items: center;
+  justify-content: center;
+}
+
+.upload-form p {
+  margin: 0 0 0.75rem 0;
+  font-size: 1.05rem;
+  line-height: 1.4;
+  color: #111827; /* dark slate */
+  font-weight: 600;
+  text-align: center;
+}
+
+.upload-form .photocount {
+  margin-top: 0.5rem;
+  font-size: 0.95rem;
+  color: #475569; /* muted slate */
+  text-align: center;
+}
+
+.upload-form .photo {
+  display: block;
+  margin: 1rem auto;
+  width: min(160px, 28%);
+  height: auto;
+  border-radius: 8px;
+}
+
+.upload-form .file-input {
+  display: flex;
+  justify-content: center;
+  margin-top: 0.75rem;
+}
+
+.upload-form input[type="file"] {
+  font-size: 0.95rem;
+  color: #111827;
+  background: transparent;
+}
+
+/* Modern browsers: style the native file button */
+.upload-form input[type="file"]::file-selector-button {
+  margin-right: 0.5rem;
+  padding: 0.5rem 0.9rem;
+  background: linear-gradient(90deg,#0077ff 0%,#0057d9 100%);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 600;
+  transition: transform 120ms ease, box-shadow 120ms ease;
+}
+.upload-form input[type="file"]::file-selector-button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 24px rgba(3,12,45,0.12);
+}
+
+/* Small counter / status text (if you prefer a separate class) */
+.upload-form .count {
+  display: block;
+  margin-top: 0.5rem;
+  font-size: 0.9rem;
+  color: #64748b;
+}
+
+/* Responsive: stack items on very small screens */
+@media (max-width: 520px) {
+  .header {
+    height: auto;
+    padding: 0.5rem;
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .header .left,
+  .header .right {
+    justify-content: space-between;
+    width: 100%;
+  }
+  /* On small screens let the upload-form size naturally and stack from the top */
+  .upload-form { min-height: auto; padding: 1rem; justify-content: flex-start; }
+}
