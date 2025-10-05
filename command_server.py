@@ -31,61 +31,11 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 # Initialize the AI processor
 processor = MainRobotProcessor()
 
-# In-memory command queue (replace with database later)
-command_queue = []
+# Command history for database team
 command_history = []
 
-# ElevenLabs Configuration (demo values - replace with real API key)
-ELEVENLABS_API_KEY = "demo_api_key_here"  # TODO: Replace with real API key
-ELEVENLABS_VOICE_ID = "21m00Tcm4TlvDq8ikWAM"  # Demo voice ID
-
-def text_to_speech_elevenlabs(text, voice_id=None):
-    """
-    Convert text to speech using ElevenLabs API.
-    
-    Args:
-        text (str): Text to convert
-        voice_id (str): Voice ID to use
-        
-    Returns:
-        bytes: Audio data or None if failed
-    """
-    if not voice_id:
-        voice_id = ELEVENLABS_VOICE_ID
-    
-    url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}"
-    
-    headers = {
-        "Accept": "audio/mpeg",
-        "Content-Type": "application/json",
-        "xi-api-key": ELEVENLABS_API_KEY
-    }
-    
-    data = {
-        "text": text,
-        "model_id": "eleven_monolingual_v1",
-        "voice_settings": {
-            "stability": 0.5,
-            "similarity_boost": 0.5
-        }
-    }
-    
-    try:
-        # TODO: Uncomment when real API key is provided
-        # response = requests.post(url, json=data, headers=headers)
-        # if response.status_code == 200:
-        #     return response.content
-        # else:
-        #     print(f"ElevenLabs API error: {response.status_code}")
-        #     return None
-        
-        # Demo mode - return placeholder
-        print(f"🔊 DEMO: Would generate speech for: '{text}'")
-        return None
-        
-    except Exception as e:
-        print(f"Error generating speech: {e}")
-        return None
+# Pi configuration - update with your Pi's IP address
+PI_SERVER_URL = "http://192.168.1.100:8080"  # TODO: Update with actual Pi IP
 
 def allowed_file(filename):
     """Check if file extension is allowed."""
@@ -129,7 +79,7 @@ def upload_audio():
         result = processor.process_audio_command(file_path)
         
         if result['success']:
-            # Add to command queue for Pi client (Pi will handle TTS/audio)
+            # Create command entry for history/database
             command_id = str(uuid.uuid4())
             command_entry = {
                 'id': command_id,
@@ -137,16 +87,17 @@ def upload_audio():
                 'voice_response': result['voice_response'],
                 'command_type': result['command_type'],
                 'timestamp': result['timestamp'],
-                'processed': False,
                 'transcription': result['transcription']
             }
 
-            command_queue.append(command_entry)
+            # Save to history and database
             command_history.append(command_entry.copy())
-
-            # TODO: Save to database here (their job)
+            # TODO: Save to database here (database team job)
             # database.save_command(command_entry)
 
+            # Send command directly to Pi
+            pi_success = send_command_to_pi(command_entry)
+            
             # Clean up uploaded file
             try:
                 os.remove(file_path)
@@ -156,60 +107,8 @@ def upload_audio():
             return jsonify({
                 'success': True,
                 'result': result,
-                'command_id': command_id
-            })
-        else:
-            return jsonify({'success': False, 'error': result.get('error', 'Processing failed')}), 500
-            
-    except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
-
-@app.route('/api/text-command', methods=['POST'])
-def text_command():
-    """
-    Process text command directly.
-    Returns: {success, result, command_id}
-    """
-    try:
-        data = request.get_json()
-        if not data or 'text' not in data:
-            return jsonify({'success': False, 'error': 'No text provided'}), 400
-        
-        text = data['text'].strip()
-        if not text:
-            return jsonify({'success': False, 'error': 'Empty text'}), 400
-        
-        # Process through AI
-        result = processor.process_text_command(text)
-        
-        if result['success']:
-            # Generate speech audio
-            audio_data = text_to_speech_elevenlabs(result['voice_response'])
-            
-            # Add to command queue for Pi client
-            command_id = str(uuid.uuid4())
-            command_entry = {
-                'id': command_id,
-                'action_number': result['action_number'],
-                'voice_response': result['voice_response'],
-                'command_type': result['command_type'],
-                'timestamp': result['timestamp'],
-                'processed': False,
-                'transcription': result['transcription'],
-                'has_audio': audio_data is not None
-            }
-            
-            command_queue.append(command_entry)
-            command_history.append(command_entry.copy())
-            
-            # TODO: Save to database here (their job)
-            # database.save_command(command_entry)
-            
-            return jsonify({
-                'success': True,
-                'result': result,
                 'command_id': command_id,
-                'has_audio': audio_data is not None
+                'pi_notified': pi_success
             })
         else:
             return jsonify({'success': False, 'error': result.get('error', 'Processing failed')}), 500
@@ -217,43 +116,37 @@ def text_command():
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
-@app.route('/api/get-commands', methods=['GET'])
-def get_commands():
+def send_command_to_pi(command_entry):
     """
-    Get pending commands for Pi client.
-    Returns: {commands: [...]}
-    """
-    try:
-        # Return unprocessed commands
-        pending = [cmd for cmd in command_queue if not cmd['processed']]
-        return jsonify({'commands': pending})
+    Send command directly to Pi server.
+    
+    Args:
+        command_entry (dict): Command to send to Pi
         
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/api/mark-processed', methods=['POST'])
-def mark_processed():
-    """
-    Mark command as processed by Pi client.
-    Body: {command_id: "..."}
+    Returns:
+        bool: True if Pi was notified successfully
     """
     try:
-        data = request.get_json()
-        if not data or 'command_id' not in data:
-            return jsonify({'success': False, 'error': 'No command_id provided'}), 400
+        # Send POST request to Pi
+        response = requests.post(
+            f"{PI_SERVER_URL}/execute-command",
+            json=command_entry,
+            timeout=5  # 5 second timeout
+        )
         
-        command_id = data['command_id']
-        
-        # Find and mark command as processed
-        for cmd in command_queue:
-            if cmd['id'] == command_id:
-                cmd['processed'] = True
-                return jsonify({'success': True})
-        
-        return jsonify({'success': False, 'error': 'Command not found'}), 404
-        
+        if response.status_code == 200:
+            print(f"✅ Command sent to Pi: {command_entry['id']}")
+            return True
+        else:
+            print(f"❌ Pi responded with {response.status_code}")
+            return False
+            
+    except requests.exceptions.RequestException as e:
+        print(f"❌ Failed to reach Pi: {e}")
+        return False
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        print(f"❌ Error sending to Pi: {e}")
+        return False
 
 @app.route('/api/history', methods=['GET'])
 def get_history():
@@ -353,14 +246,11 @@ def get_status():
     Get server status and stats.
     """
     try:
-        pending_count = len([cmd for cmd in command_queue if not cmd['processed']])
-        
         return jsonify({
             'status': 'online',
-            'pending_commands': pending_count,
             'total_commands': len(command_history),
             'supported_formats': processor.get_supported_formats(),
-            'elevenlabs_configured': ELEVENLABS_API_KEY != "demo_api_key_here",
+            'pi_server_url': PI_SERVER_URL,
             'timestamp': datetime.now().isoformat()
         })
         
