@@ -1,66 +1,168 @@
 #!/usr/bin/env python3
 """
-PI CLIENT - Polls Supabase database and executes robot actions
-Runs on Raspberry Pi, connects to Supabase for commands
+STANDALONE PI CLIENT - Monitors Supabase database and executes robot actions
+Runs independently on Raspberry Pi, continuously polls for command changes
+Executes GPIO commands and plays TTS responses directly
+
+REQUIREMENTS FOR PI:
+pip install supabase python-dotenv requests RPi.GPIO pygame
+
+REQUIRED .env FILE:
+SUPABASE_URL=your_supabase_project_url
+SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key
+ELEVENLABS_API_KEY=your_elevenlabs_api_key
+
+USAGE:
+python pi_client.py
+
+GPIO PIN CONFIGURATION:
+- Modify self.gpio_pin in __init__ method to change control pin
+- Default is GPIO pin 18 (BCM numbering)
+- Pin goes HIGH during robot actions, LOW when idle
+
+TARGET USER ID:
+- Monitors user ID: a877a877-5a68-407f-bf18-6b3f4e69d59d
+- Change self.target_user_id in __init__ if needed
 """
 
 import time
 import json
 import requests
-from datetime import datetime
 import os
-from pathlib import Path
-import base64
+import io
 import threading
+from datetime import datetime
 from supabase import create_client, Client
 from dotenv import load_dotenv
+
+# GPIO control imports (will be available on Pi)
+try:
+    import RPi.GPIO as GPIO
+    GPIO_AVAILABLE = True
+except ImportError:
+    print("⚠️ RPi.GPIO not available - running in simulation mode")
+    GPIO_AVAILABLE = False
+
+# Audio playback imports
+try:
+    import pygame
+    PYGAME_AVAILABLE = True
+except ImportError:
+    try:
+        import pydub
+        from pydub.playback import play
+        PYDUB_AVAILABLE = True
+        PYGAME_AVAILABLE = False
+    except ImportError:
+        print("⚠️ Neither pygame nor pydub available - TTS will be silent")
+        PYDUB_AVAILABLE = False
+        PYGAME_AVAILABLE = False
 
 # Load environment variables
 load_dotenv()
 
-class PiRobotClient:
+class StandalonePiClient:
     """
-    Client that runs on Raspberry Pi to execute robot commands.
-    Polls Supabase database for new commands and executes them.
+    Standalone Pi client that monitors database for command changes
+    and executes robot actions with TTS responses.
     """
     
-    def __init__(self, supabase_url=None, supabase_key=None):
-        """
-        Initialize Pi client with Supabase connection.
+    def __init__(self):
+        """Initialize the standalone Pi client"""
         
-        Args:
-            supabase_url (str): Supabase project URL
-            supabase_key (str): Supabase service role key
-        """
-        # Get Supabase credentials from environment or parameters
-        self.supabase_url = supabase_url or os.getenv('SUPABASE_URL')
-        self.supabase_key = supabase_key or os.getenv('SUPABASE_SERVICE_ROLE_KEY')
+        # Target user ID to monitor
+        self.target_user_id = "a877a877-5a68-407f-bf18-6b3f4e69d59d"
+        
+        # GPIO pin for robot control (modify as needed)
+        self.gpio_pin = 18  # Change this to your desired GPIO pin
+        
+        # Get Supabase credentials from environment
+        self.supabase_url = os.getenv('SUPABASE_URL')
+        self.supabase_key = os.getenv('SUPABASE_SERVICE_ROLE_KEY')
         
         if not self.supabase_url or not self.supabase_key:
-            raise ValueError("Supabase URL and Service Role Key are required")
+            raise ValueError("SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set in environment")
         
         # Initialize Supabase client
         self.supabase: Client = create_client(self.supabase_url, self.supabase_key)
         
-        self.poll_interval = 2.0  # seconds
+        # Polling settings
+        self.poll_interval = 2.0  # seconds between database checks
         self.running = False
-        self.last_command_timestamp = None
         
-        print(f"🤖 Pi Robot Client initialized")
+        # Track last seen command to detect changes
+        self.last_action = None
+        self.last_response = None
+        self.last_is_command = None
+        
+        # Initialize GPIO
+        self._setup_gpio()
+        
+        # Initialize audio system
+        self._setup_audio()
+        
+        # Load ElevenLabs API key
+        self.elevenlabs_api_key = os.getenv('ELEVENLABS_API_KEY')
+        if not self.elevenlabs_api_key:
+            print("⚠️ ELEVENLABS_API_KEY not found - TTS will be disabled")
+        
+        print(f"🤖 Standalone Pi Client initialized")
+        print(f"🎯 Monitoring user: {self.target_user_id}")
+        print(f"📌 GPIO pin: {self.gpio_pin}")
         print(f"🌐 Supabase: {self.supabase_url}")
-        
-        # Load local keys.env if present (for additional config)
-        self._load_keys_env()
-
-        # Optional pigpio setup (initialized lazily)
-        self.pi = None
         
         # Test database connection
         self._test_database_connection()
     
+    def _setup_gpio(self):
+        """Initialize GPIO for robot control"""
+        if GPIO_AVAILABLE:
+            try:
+                GPIO.setmode(GPIO.BCM)
+                GPIO.setup(self.gpio_pin, GPIO.OUT)
+                GPIO.output(self.gpio_pin, GPIO.LOW)  # Start with pin low
+                print(f"✅ GPIO pin {self.gpio_pin} initialized")
+            except Exception as e:
+                print(f"❌ GPIO setup failed: {e}")
+        else:
+            print("💡 Running in GPIO simulation mode")
+    
+    def _setup_audio(self):
+        """Initialize audio playback system"""
+        if PYGAME_AVAILABLE:
+            try:
+                pygame.mixer.init()
+                print("✅ Pygame audio system initialized")
+            except Exception as e:
+                print(f"❌ Pygame init failed: {e}")
+        elif PYDUB_AVAILABLE:
+            print("✅ Pydub audio system available")
+        else:
+            print("⚠️ No audio playback system available")
+    
+    def _test_database_connection(self):
+        """Test connection to Supabase database"""
+        try:
+            # Try to fetch user profile to test connection
+            response = self.supabase.table('user_profiles').select('*').eq('user_id', self.target_user_id).execute()
+            if response.data:
+                print("✅ Database connection successful")
+                # Store initial state
+                profile = response.data[0]
+                self.last_action = profile.get('action')
+                self.last_response = profile.get('response')
+                self.last_is_command = profile.get('is_command')
+                print(f"📊 Initial state - Action: {self.last_action}, Command: {self.last_is_command}")
+            else:
+                print(f"⚠️ No profile found for user {self.target_user_id}")
+        except Exception as e:
+            print(f"❌ Database connection failed: {e}")
+            raise
+    
     def execute_robot_action(self, action_number):
         """
         Execute robot action based on action number.
+        Sets GPIO pin high for the duration of the action.
         
         Args:
             action_number (int): 0-4 robot action
@@ -75,17 +177,17 @@ class PiRobotClient:
                 print("💬 Conversational response - no robot movement")
                 return True
             elif action_number == 1:
-                print("➡️  MOVE FORWARD")
-                return self._move_forward()
+                print("➡️ MOVE FORWARD")
+                return self._trigger_gpio_action(0.8)  # 800ms pulse
             elif action_number == 2:
-                print("⬅️  MOVE BACKWARD")
-                return self._move_backward()
+                print("⬅️ MOVE BACKWARD") 
+                return self._trigger_gpio_action(0.8)  # 800ms pulse
             elif action_number == 3:
-                print("⬅️  TURN LEFT")
-                return self._turn_left()
+                print("↩️ TURN LEFT")
+                return self._trigger_gpio_action(0.6)  # 600ms pulse
             elif action_number == 4:
-                print("➡️  TURN RIGHT")
-                return self._turn_right()
+                print("↪️ TURN RIGHT")
+                return self._trigger_gpio_action(0.6)  # 600ms pulse
             else:
                 print(f"❌ Unknown action number: {action_number}")
                 return False
@@ -93,274 +195,265 @@ class PiRobotClient:
         except Exception as e:
             print(f"❌ Error executing action {action_number}: {e}")
             return False
-
-    def _load_keys_env(self, env_file='keys.env'):
-        """Load simple KEY=VALUE pairs from env_file into os.environ if present."""
-        try:
-            if not os.path.exists(env_file):
-                return
-            with open(env_file, 'r') as f:
-                for line in f:
-                    line = line.strip()
-                    if not line or line.startswith('#') or '=' not in line:
-                        continue
-                    k, v = line.split('=', 1)
-                    k = k.strip()
-                    v = v.strip().strip('"')
-                    if k and v and k not in os.environ:
-                        os.environ[k] = v
-        except Exception as e:
-            print(f"⚠️ Could not load {env_file}: {e}")
-
-    def _read_key_from_env_file(self, key_name, env_file='keys.env'):
-        """Read a single key from env file without modifying env.
-        Returns the value or None."""
-        try:
-            if not os.path.exists(env_file):
-                return None
-            with open(env_file, 'r') as f:
-                for line in f:
-                    if line.strip().startswith(key_name + '='):
-                        return line.strip().split('=', 1)[1].strip().strip('"')
-        except Exception:
-            return None
-        return None
-
-    def _ensure_pigpio(self):
-        """Lazily initialize pigpio and store client in self.pi. Returns True if available."""
-        if self.pi is not None:
-            return True
-        try:
-            import pigpio
-            self.pi = pigpio.pi()
-            if not self.pi.connected:
-                print("⚠️ pigpio daemon not running or cannot connect")
-                self.pi = None
-                return False
-            return True
-        except Exception as e:
-            # pigpio not available; fallback to simulation
-            print(f"⚠️ pigpio unavailable: {e}")
-            self.pi = None
-            return False
-
-    # Movement stubs - use pigpio when available, otherwise simulate
-    def _move_forward(self):
-        if self._ensure_pigpio():
-            try:
-                # Example: set motor pins - replace with your wiring
-                # self.pi.write(MOTOR_LEFT_FORWARD_PIN, 1)
-                # self.pi.write(MOTOR_RIGHT_FORWARD_PIN, 1)
-                time.sleep(0.5)
-                return True
-            except Exception as e:
-                print(f"❌ pigpio move_forward error: {e}")
-                return False
-        else:
-            time.sleep(0.5)
-            return True
-
-    def _move_backward(self):
-        if self._ensure_pigpio():
-            try:
-                time.sleep(0.5)
-                return True
-            except Exception as e:
-                print(f"❌ pigpio move_backward error: {e}")
-                return False
-        else:
-            time.sleep(0.5)
-            return True
-
-    def _turn_left(self):
-        if self._ensure_pigpio():
-            try:
-                time.sleep(0.4)
-                return True
-            except Exception as e:
-                print(f"❌ pigpio turn_left error: {e}")
-                return False
-        else:
-            time.sleep(0.4)
-            return True
-
-    def _turn_right(self):
-        if self._ensure_pigpio():
-            try:
-                time.sleep(0.4)
-                return True
-            except Exception as e:
-                print(f"❌ pigpio turn_right error: {e}")
-                return False
-        else:
-            time.sleep(0.4)
-            return True
-
-    # Pi client intentionally keeps no AI/TTS responsibilities.
-    # It only polls the server for command dicts and executes actions locally.
-    def elevenlabs_tts(self, text, voice_id=None):
-        """
-        ElevenLabs TTS helper for the Pi. If ELEVENLABS_API_KEY is set in environment
-        or in a local `keys.env`, this will attempt to call the ElevenLabs API and save
-        an MP3 under `pi_audio/`. Otherwise it will write a placeholder file.
-        Returns: path to saved audio file or None on failure.
-        """
-        try:
-            # Try env var first
-            api_key = os.environ.get('ELEVENLABS_API_KEY')
-            # Fallback: try reading keys.env in repo root
-            if not api_key:
-                env_key = self._read_key_from_env_file('ELEVENLABS_API_KEY')
-                if env_key:
-                    api_key = env_key
-            audio_dir = Path('pi_audio')
-            audio_dir.mkdir(exist_ok=True)
-
-            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            filename = f"{timestamp}_tts.mp3"
-            file_path = audio_dir / filename
-
-            if api_key:
-                try:
-                    url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id or '21m00Tcm4TlvDq8ikWAM'}"
-                    headers = { 'xi-api-key': api_key, 'Accept': 'audio/mpeg', 'Content-Type': 'application/json' }
-                    payload = { 'text': text, 'model_id': 'eleven_monolingual_v1' }
-                    resp = requests.post(url, json=payload, headers=headers, timeout=10)
-                    if resp.status_code == 200:
-                        with open(file_path, 'wb') as f:
-                            f.write(resp.content)
-                        return str(file_path)
-                    else:
-                        print(f"ElevenLabs returned {resp.status_code}: {resp.text}")
-                except Exception as e:
-                    print(f"ElevenLabs request failed: {e}")
-
-            # Fallback/demo behavior: create a small placeholder file so other systems can find it
-            with open(file_path, 'wb') as f:
-                f.write(b'')
-
-            return str(file_path)
-
-        except Exception as e:
-            print(f"❌ TTS error on Pi: {e}")
-            return None
     
-    def poll_for_commands(self):
+    def _trigger_gpio_action(self, duration):
         """
-        Poll server for new commands and execute them.
-        """
-        try:
-            response = requests.get(f"{self.server_url}/api/get-commands", timeout=5)
-            response.raise_for_status()
-            
-            data = response.json()
-            commands = data.get('commands', [])
-            
-            for command in commands:
-                try:
-                    print(f"\n📨 New command: {command['id']}")
-                    print(f"🎤 User said: '{command['transcription']}'")
-                    print(f"💭 Response: '{command['voice_response']}'")
-                    # Synthesize TTS on Pi (ElevenLabs) and optionally play/save audio
-                    try:
-                        audio_path = self.elevenlabs_tts(command['voice_response'])
-                        if audio_path:
-                            print(f"🔊 TTS saved to: {audio_path}")
-                            # TODO: Add platform playback code here (e.g., mpg123/aplay)
-                    except Exception as e:
-                        print(f"⚠️ TTS generation failed: {e}")
-
-                    # Execute the robot action
-                    success = self.execute_robot_action(command['action_number'])
-                    
-                    if success:
-                        # Mark command as processed
-                        mark_response = requests.post(
-                            f"{self.server_url}/api/mark-processed",
-                            json={'command_id': command['id']},
-                            timeout=5
-                        )
-                        mark_response.raise_for_status()
-                        print(f"✅ Command {command['id']} completed")
-                    else:
-                        print(f"❌ Failed to execute command {command['id']}")
-                        
-                except Exception as e:
-                    print(f"❌ Error processing command {command.get('id', 'unknown')}: {e}")
-            
-            return len(commands)
-            
-        except requests.exceptions.RequestException as e:
-            print(f"🌐 Connection error: {e}")
-            return 0
-        except Exception as e:
-            print(f"❌ Error polling for commands: {e}")
-            return 0
-    
-    def check_server_status(self):
-        """
-        Check if server is reachable.
+        Trigger GPIO pin for specified duration
+        
+        Args:
+            duration (float): Duration in seconds to keep pin high
         
         Returns:
-            bool: True if server is online
+            bool: True if successful
         """
         try:
-            response = requests.get(f"{self.server_url}/api/status", timeout=5)
-            response.raise_for_status()
+            if GPIO_AVAILABLE:
+                GPIO.output(self.gpio_pin, GPIO.HIGH)
+                print(f"📌 GPIO pin {self.gpio_pin} set HIGH for {duration}s")
+                time.sleep(duration)
+                GPIO.output(self.gpio_pin, GPIO.LOW)
+                print(f"📌 GPIO pin {self.gpio_pin} set LOW")
+            else:
+                print(f"💡 [SIMULATION] GPIO pin {self.gpio_pin} would be HIGH for {duration}s")
+                time.sleep(duration)
             
-            data = response.json()
-            print(f"🟢 Server online - {data.get('pending_commands', 0)} pending commands")
             return True
+        except Exception as e:
+            print(f"❌ GPIO action failed: {e}")
+            return False
+
+    def elevenlabs_tts_and_play(self, text, voice_id=None):
+        """
+        Generate TTS using ElevenLabs API and play it directly (no file saving).
+        
+        Args:
+            text (str): Text to convert to speech
+            voice_id (str): ElevenLabs voice ID (optional)
+            
+        Returns:
+            bool: True if successful
+        """
+        try:
+            if not self.elevenlabs_api_key:
+                print("⚠️ No ElevenLabs API key - skipping TTS")
+                return False
+            
+            print(f"🔊 Generating TTS for: '{text[:50]}{'...' if len(text) > 50 else ''}'")
+            
+            # Make API request to ElevenLabs
+            url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id or '21m00Tcm4TlvDq8ikWAM'}"
+            headers = {
+                'xi-api-key': self.elevenlabs_api_key,
+                'Accept': 'audio/mpeg',
+                'Content-Type': 'application/json'
+            }
+            payload = {
+                'text': text,
+                'model_id': 'eleven_monolingual_v1',
+                'voice_settings': {
+                    'stability': 0.5,
+                    'similarity_boost': 0.5
+                }
+            }
+            
+            response = requests.post(url, json=payload, headers=headers, timeout=15)
+            
+            if response.status_code == 200:
+                # Play audio directly from memory
+                return self._play_audio_from_bytes(response.content)
+            else:
+                print(f"❌ ElevenLabs API error {response.status_code}: {response.text}")
+                return False
+                
+        except Exception as e:
+            print(f"❌ TTS generation failed: {e}")
+            return False
+    
+    def _play_audio_from_bytes(self, audio_bytes):
+        """
+        Play audio from byte data using available audio system.
+        
+        Args:
+            audio_bytes (bytes): MP3 audio data
+            
+        Returns:
+            bool: True if successful
+        """
+        try:
+            if PYGAME_AVAILABLE:
+                # Use pygame for playback
+                audio_buffer = io.BytesIO(audio_bytes)
+                pygame.mixer.music.load(audio_buffer)
+                pygame.mixer.music.play()
+                
+                # Wait for playback to complete
+                while pygame.mixer.music.get_busy():
+                    time.sleep(0.1)
+                
+                print("✅ Audio played via pygame")
+                return True
+                
+            elif PYDUB_AVAILABLE:
+                # Use pydub for playback
+                from pydub import AudioSegment
+                audio_buffer = io.BytesIO(audio_bytes)
+                audio = AudioSegment.from_mp3(audio_buffer)
+                play(audio)
+                
+                print("✅ Audio played via pydub")
+                return True
+            else:
+                print("⚠️ No audio playback system available")
+                return False
+                
+        except Exception as e:
+            print(f"❌ Audio playback failed: {e}")
+            return False
+    
+    def check_for_command_changes(self):
+        """
+        Check database for changes in user profile commands.
+        
+        Returns:
+            bool: True if changes detected and processed
+        """
+        try:
+            # Query the user profile for the target user
+            response = self.supabase.table('user_profiles').select('*').eq('user_id', self.target_user_id).execute()
+            
+            if not response.data:
+                print(f"⚠️ No profile found for user {self.target_user_id}")
+                return False
+            
+            profile = response.data[0]
+            current_action = profile.get('action')
+            current_response = profile.get('response') 
+            current_is_command = profile.get('is_command')
+            
+            # Check if anything has changed
+            if (current_action != self.last_action or 
+                current_response != self.last_response or 
+                current_is_command != self.last_is_command):
+                
+                print(f"\n� Change detected!")
+                print(f"📊 Action: {self.last_action} → {current_action}")
+                print(f"💭 Response: {self.last_response} → {current_response}")
+                print(f"🤖 Is Command: {self.last_is_command} → {current_is_command}")
+                
+                # Process the new command
+                success = self._process_command_change(current_action, current_response, current_is_command)
+                
+                if success:
+                    # Update our tracking variables
+                    self.last_action = current_action
+                    self.last_response = current_response
+                    self.last_is_command = current_is_command
+                
+                return success
+            
+            return False  # No changes detected
             
         except Exception as e:
-            print(f"🔴 Server unreachable: {e}")
+            print(f"❌ Error checking for changes: {e}")
+            return False
+    
+    def _process_command_change(self, action, response, is_command):
+        """
+        Process a detected command change.
+        
+        Args:
+            action (int): Action number (0-4)
+            response (str): TTS response text
+            is_command (bool): Whether this is a command or conversation
+            
+        Returns:
+            bool: True if successful
+        """
+        try:
+            print(f"\n🎯 Processing new command:")
+            print(f"📋 Action: {action}")
+            print(f"💬 Response: '{response}'")
+            print(f"🤖 Is Command: {is_command}")
+            
+            # Play TTS response if available
+            if response and response.strip():
+                tts_success = self.elevenlabs_tts_and_play(response)
+                if not tts_success:
+                    print("⚠️ TTS playback failed, continuing with action...")
+            
+            # Execute robot action if it's a command
+            if is_command and action is not None:
+                action_success = self.execute_robot_action(int(action))
+                if action_success:
+                    print(f"✅ Command processed successfully")
+                else:
+                    print(f"❌ Command execution failed")
+                return action_success
+            else:
+                print("� Conversational response only - no robot action")
+                return True
+            
+        except Exception as e:
+            print(f"❌ Error processing command: {e}")
             return False
     
     def run(self):
         """
-        Main run loop - polls for commands continuously.
+        Main run loop - continuously monitors database for changes.
         """
-        print(f"🚀 Starting Pi Robot Client...")
-        
-        # Check server connection
-        if not self.check_server_status():
-            print("❌ Cannot connect to server. Exiting.")
-            return
+        print(f"🚀 Starting Standalone Pi Robot Client...")
+        print(f"🎯 Monitoring user: {self.target_user_id}")
+        print(f"📌 GPIO control pin: {self.gpio_pin}")
+        print(f"🔄 Checking every {self.poll_interval} seconds...")
+        print("Press Ctrl+C to stop\n")
         
         self.running = True
-        print(f"🔄 Polling every {self.poll_interval} seconds...")
-        print("Press Ctrl+C to stop\n")
         
         try:
             while self.running:
-                commands_processed = self.poll_for_commands()
+                changes_detected = self.check_for_command_changes()
                 
-                if commands_processed > 0:
-                    print(f"📊 Processed {commands_processed} commands")
+                if not changes_detected:
+                    # Print a small status indicator every 30 seconds
+                    if int(time.time()) % 30 == 0:
+                        print("� No changes detected... (monitoring)")
                 
                 time.sleep(self.poll_interval)
                 
         except KeyboardInterrupt:
-            print("\n🛑 Stopping Pi Robot Client...")
+            print("\n🛑 Stopping Standalone Pi Client...")
             self.running = False
         except Exception as e:
             print(f"\n❌ Unexpected error: {e}")
             self.running = False
+        finally:
+            # Cleanup GPIO
+            if GPIO_AVAILABLE:
+                try:
+                    GPIO.cleanup()
+                    print("🧹 GPIO cleaned up")
+                except:
+                    pass
 
 
 def main():
     """
-    Main function - create and run Pi client.
+    Main function - create and run standalone Pi client.
+    No command line arguments needed - all config from .env file.
     """
-    import sys
+    try:
+        print("🤖 Initializing Standalone Pi Robot Client...")
+        
+        # Create and run client
+        client = StandalonePiClient()
+        client.run()
+        
+    except Exception as e:
+        print(f"❌ Failed to start client: {e}")
+        return 1
     
-    # Get server URL from command line or use default
-    server_url = sys.argv[1] if len(sys.argv) > 1 else "http://localhost:5000"
-    
-    # Create and run client
-    client = PiRobotClient(server_url)
-    client.run()
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    exit(main())
