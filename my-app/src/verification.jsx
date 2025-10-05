@@ -73,6 +73,7 @@ function Verification() {
       const body = await res.json()
       if (!res.ok) throw new Error(body.error || 'Upload failed')
       setMessage(`Uploaded ${body.uploaded.length} photo(s).`)
+      navigate('/microphone', { replace: true })
       // clear input
       setSelectedFiles([])
       setPhotocount(0)

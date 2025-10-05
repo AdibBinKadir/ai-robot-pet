@@ -39,6 +39,16 @@ function App() {
             session ? <Navigate to="/verification" /> : <Navigate to="/login" />
           }
         />
+        <Route
+          path="/microphone"
+          element={
+            session ? <Navigate to="/microphone" /> : <Navigate to="/login" />
+          }
+        />
+        <Route
+          path="*"
+          element={<Navigate to={session ? "/verification" : "/login"} />}
+        />
       </Routes>
     </Router>
   );
