@@ -4,9 +4,9 @@ import { supabase } from './dbconnect'
 import RobotControl from './RobotControl'
 import DatabaseTester from './DatabaseTester'
 import photo from './assets/photo.svg'
-// import "./verification.css"
-// import './App.css'
-// import './index.css'
+import "./verification.css"
+import './App.css'
+import './index.css'
 
 function Verification() {
   const navigate = useNavigate()
@@ -111,10 +111,10 @@ function Verification() {
           </div>
 
           <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-            <button onClick={handleUpload} disabled={uploading || photocount === 0}>
+            <button style={{ backgroundColor: 'blue', color: 'white' }} onClick={handleUpload} disabled={uploading || photocount === 0}>
               {uploading ? 'Uploading…' : 'Upload Photos'}
             </button>
-            <button onClick={() => { setSelectedFiles([]); setPhotocount(0); if (fileInputRef.current) fileInputRef.current.value = '' }}>
+            <button style={{ backgroundColor: 'red', color: 'white' }} onClick={() => { setSelectedFiles([]); setPhotocount(0); if (fileInputRef.current) fileInputRef.current.value = '' }}>
               Clear
             </button>
           </div>

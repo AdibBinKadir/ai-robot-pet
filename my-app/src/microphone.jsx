@@ -7,7 +7,7 @@ export default function Microphone() {
   const [devices, setDevices] = useState([
     {
       id: "1",
-      name: "Raspberry Pi 4B",
+      name: "PetPal",
       type: "laptop",
       status: "available",
     },

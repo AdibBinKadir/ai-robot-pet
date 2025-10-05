@@ -6,7 +6,7 @@ import { useEffect, useState } from 'react';
 import Login from './login';
 import Verification from './verification';
 import Microphone from './microphone';
-// import './index.css';
+import './index.css';
 
 function App() {
   const [session, setSession] = useState(null);
