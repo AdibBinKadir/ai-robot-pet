@@ -95,10 +95,10 @@ function Verification() {
         </div>
 
         <div className="upload-form">
-          <p>Please upload up to 3 images of yourself to allow recognition.</p>
+          <p>Upload up to 3 images of yourself to enable facial recognition</p>
 
-          <div className="photocount">Photos Selected: {photocount} out of 3</div>
-          <img src={photo} className="photo" alt="Logo" />
+          <div className="photocount">Photos Selected: {photocount} / 3</div>
+          <img src={photo} className="photo" alt="Upload Photos" />
 
           <div className="file-input">
             <input
@@ -110,25 +110,38 @@ function Verification() {
             />
           </div>
 
-          <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-            <button style={{ backgroundColor: 'blue', color: 'white' }} onClick={handleUpload} disabled={uploading || photocount === 0}>
+          <div className="upload-buttons">
+            <button 
+              className="primary-btn"
+              onClick={handleUpload} 
+              disabled={uploading || photocount === 0}
+            >
               {uploading ? 'Uploading…' : 'Upload Photos'}
             </button>
-            <button style={{ backgroundColor: 'red', color: 'white' }} onClick={() => { setSelectedFiles([]); setPhotocount(0); if (fileInputRef.current) fileInputRef.current.value = '' }}>
-              Clear
+            <button 
+              className="secondary-btn"
+              onClick={() => { 
+                setSelectedFiles([]); 
+                setPhotocount(0); 
+                if (fileInputRef.current) fileInputRef.current.value = '' 
+              }}
+            >
+              Clear Selection
             </button>
           </div>
 
-          {message && <div className="upload-message" style={{ marginTop: 8 }}>{message}</div>}
+          {message && <div className="upload-message">{message}</div>}
         </div>
 
         {/* Robot Control Section */}
-        <div style={{ marginTop: '40px' }}>
+        <div className="section-card">
+          <h3>🤖 Robot Control</h3>
           <RobotControl />
         </div>
 
         {/* Database Testing Section */}
-        <div style={{ marginTop: '40px' }}>
+        <div className="section-card">
+          <h3>🗄️ Database Testing</h3>
           <DatabaseTester />
         </div>
       </div>
